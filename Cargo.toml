@@ -1,7 +1,15 @@
 [package]
-name = "llm-proxy-api"
+name = "llm-gateway"
 version = "0.1.0"
 edition = "2021"
+
+[lib]
+name = "llm_gateway"
+path = "src/lib.rs"
+
+[[bin]]
+name = "llm-gateway"
+path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.7", features = ["tokio", "http1", "http2", "json"] }
@@ -17,3 +25,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1.0"
 futures = "0.3"
 bytes = "1.5"
+
+[dev-dependencies]
+tempfile = "3.0"

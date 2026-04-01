@@ -1,4 +1,4 @@
-# LLM Proxy API
+# LLM Gateway
 
 A Rust-based HTTP proxy that normalizes requests from multiple sources (Anthropic, OpenAI, Zai, etc.) to OpenAI-compatible format and outputs in the configured format.
 
@@ -25,11 +25,13 @@ api-key = "your-proxy-api-key"
 [providers.openai]
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-openai-key"
+input = "openai"
 output = "openai-compatible"
 
 [providers.anthropic]
 base_url = "https://api.anthropic.com/v1"
 api_key = "sk-ant-your-key"
+input = "anthropic"
 output = "anthropic"
 ```
 
@@ -87,14 +89,17 @@ export PROXY_API_KEY="your-proxy-api-key"
 
 export PROVIDER_OPENAI_BASE_URL="https://api.openai.com/v1"
 export PROVIDER_OPENAI_API_KEY="sk-your-openai-key"
+export PROVIDER_OPENAI_INPUT="openai"
 export PROVIDER_OPENAI_OUTPUT="openai-compatible"
 
 export PROVIDER_ANTHROPIC_BASE_URL="https://api.anthropic.com/v1"
 export PROVIDER_ANTHROPIC_API_KEY="sk-ant-your-key"
+export PROVIDER_ANTHROPIC_INPUT="anthropic"
 export PROVIDER_ANTHROPIC_OUTPUT="anthropic"
 
 export PROVIDER_OLLAMA_BASE_URL="http://localhost:11434/api"
 export PROVIDER_OLLAMA_API_KEY="ollama-api-key"
+export PROVIDER_OLLAMA_INPUT="ollama"
 export PROVIDER_OLLAMA_OUTPUT="ollama"
 ```
 
@@ -110,18 +115,18 @@ export PROVIDER_OLLAMA_OUTPUT="ollama"
 ## Architecture
 
 - **config.rs**: Configuration parsing (TOML/env vars)
-- **formats.rs**: Simple format types and conversion functions
-  - `anthropic_to_openai()` - converts Anthropic request to OpenAI
-  - `openai_to_anthropic()` - converts OpenAI response to Anthropic  
-  - `ollama_to_openai()` - converts Ollama request to OpenAI
-  - `openai_to_ollama()` - converts OpenAI response to Ollama
+- **protocols/**: Format implementations and conversions
+  - `mod.rs` - Canonical types and conversion dispatch
+  - `openai.rs` - OpenAI format
+  - `anthropic.rs` - Anthropic format
+  - `ollama.rs` - Ollama format
 - **middleware.rs**: API key authentication
-- **proxy.rs**: Request forwarding using simple conversion functions
+- **proxy.rs**: Request forwarding and provider routing
 - **main.rs**: Server setup and routing
 
 ## Adding Custom Formats
 
-Just add conversion functions in `formats.rs`:
+Add a new file in `protocols/` directory:
 
 ```rust
 // 1. Define your format types

@@ -783,7 +783,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6373607a59f0be73a39b6fe456b8192fcc3585f602af20751600e974dd455e77"
 
 [[package]]
-name = "llm-proxy-api"
+name = "llm-gateway"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -793,6 +793,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "toml",
  "tower 0.4.13",

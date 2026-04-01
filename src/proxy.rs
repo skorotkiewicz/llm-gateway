@@ -11,8 +11,10 @@ use std::sync::Arc;
 use tracing::{debug, error, info};
 
 use crate::config::{Config, InputFormat as ConfigInputFormat, OutputFormat as ConfigOutputFormat};
-use crate::protocols::{format_response, parse_request, CanonicalChatRequest, InputFormat, OutputFormat};
-use crate::protocols::openai::{OpenAIRequest, OpenAIMessage, OpenAIResponse};
+use crate::protocols::openai::{OpenAIMessage, OpenAIRequest, OpenAIResponse};
+use crate::protocols::{
+    format_response, parse_request, CanonicalChatRequest, InputFormat, OutputFormat,
+};
 
 #[derive(Clone)]
 pub struct ProxyState {
@@ -95,7 +97,10 @@ async fn chat_completions_internal(
         ConfigInputFormat::Ollama => InputFormat::Ollama,
         ConfigInputFormat::OpenAi => InputFormat::OpenAI,
     };
-    info!("Using input format: {:?} for provider: {}", input_format, provider_name);
+    info!(
+        "Using input format: {:?} for provider: {}",
+        input_format, provider_name
+    );
 
     // Parse into canonical format
     let canonical_request: CanonicalChatRequest = match parse_request(input_format, &body) {
@@ -115,11 +120,15 @@ async fn chat_completions_internal(
     // Convert canonical to OpenAI format for upstream
     let openai_request = OpenAIRequest {
         model: canonical_request.model.clone(),
-        messages: canonical_request.messages.iter().map(|m| OpenAIMessage {
-            role: m.role.clone(),
-            content: m.content.clone(),
-            name: m.name.clone(),
-        }).collect(),
+        messages: canonical_request
+            .messages
+            .iter()
+            .map(|m| OpenAIMessage {
+                role: m.role.clone(),
+                content: m.content.clone(),
+                name: m.name.clone(),
+            })
+            .collect(),
         temperature: canonical_request.temperature,
         max_tokens: canonical_request.max_tokens,
         stream: canonical_request.stream,
@@ -236,35 +245,33 @@ async fn chat_completions_internal(
     };
 
     // Parse upstream response (always OpenAI format)
-    let openai_response: OpenAIResponse =
-        match serde_json::from_slice(&response_body) {
-            Ok(resp) => {
-                debug!("Successfully parsed upstream response");
-                resp
-            }
-            Err(e) => {
-                error!("Failed to parse upstream response as OpenAI format: {}", e);
-                error!("Response body: {}", String::from_utf8_lossy(&response_body));
-                // Return original response if parsing fails
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(response_body))
-                    .unwrap();
-            }
-        };
-    
-    // Convert to canonical for output formatting
-    debug!("Converting OpenAI response to canonical format");
-    let canonical_response: crate::protocols::CanonicalChatResponse = match std::panic::catch_unwind(|| {
-        openai_response.into()
-    }) {
-        Ok(resp) => resp,
-        Err(_) => {
-            error!("Panic during conversion from OpenAI to canonical");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Conversion error");
+    let openai_response: OpenAIResponse = match serde_json::from_slice(&response_body) {
+        Ok(resp) => {
+            debug!("Successfully parsed upstream response");
+            resp
+        }
+        Err(e) => {
+            error!("Failed to parse upstream response as OpenAI format: {}", e);
+            error!("Response body: {}", String::from_utf8_lossy(&response_body));
+            // Return original response if parsing fails
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(response_body))
+                .unwrap();
         }
     };
+
+    // Convert to canonical for output formatting
+    debug!("Converting OpenAI response to canonical format");
+    let canonical_response: crate::protocols::CanonicalChatResponse =
+        match std::panic::catch_unwind(|| openai_response.into()) {
+            Ok(resp) => resp,
+            Err(_) => {
+                error!("Panic during conversion from OpenAI to canonical");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Conversion error");
+            }
+        };
 
     // Format the response to desired output format
     match format_response(output_format, &canonical_response) {
@@ -330,8 +337,5 @@ pub async fn list_models(State(state): State<Arc<ProxyState>>) -> impl IntoRespo
 
 pub async fn fallback_handler() -> impl IntoResponse {
     error!("Fallback handler called - request did not match any route");
-    error_response(
-        StatusCode::NOT_FOUND,
-        "Endpoint not found"
-    )
+    error_response(StatusCode::NOT_FOUND, "Endpoint not found")
 }

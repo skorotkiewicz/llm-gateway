@@ -1,4 +1,4 @@
-# LLM Proxy
+# LLM Gateway
 
 Simple API format converter for LLM providers.
 
