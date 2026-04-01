@@ -6,24 +6,29 @@ api-key = "protected-by-own-apikey"
 [providers.openai]
 base_url = "https://api.openai.com/v1"
 api_key = "sk-your-openai-key"
+input = "openai"
 output = "openai-compatible"
 
 [providers.anthropic]
 base_url = "https://api.anthropic.com/v1"
 api_key = "sk-ant-your-anthropic-key"
+input = "anthropic"
 output = "anthropic"
 
 [providers.zai]
 base_url = "https://api.zai.example.com/v1"
 api_key = "your-zai-key"
+input = "openai"
 output = "openai-compatible"
 
 [providers.local]
 base_url = "http://localhost:8080/v1"
 api_key = "local-api-key"
+input = "openai"
 output = "openai-compatible"
 
 [providers.ollama]
 base_url = "http://localhost:11434/api"
 api_key = "ollama-api-key"
+input = "ollama"
 output = "openai-compatible"

@@ -10,28 +10,23 @@ use serde_json::Value;
 use std::sync::Arc;
 use tracing::{error, info};
 
-use crate::config::{Config, OutputFormat};
-use crate::formats::{CanonicalChatRequest, FormatRegistry};
+use crate::config::{Config, InputFormat as ConfigInputFormat, OutputFormat as ConfigOutputFormat};
+use crate::protocols::{format_response, parse_request, CanonicalChatRequest, InputFormat, OutputFormat};
 
 #[derive(Clone)]
 pub struct ProxyState {
     pub config: Arc<Config>,
     pub client: Client,
-    pub format_registry: Arc<FormatRegistry>,
 }
 
 impl ProxyState {
-    pub fn new(config: Arc<Config>, format_registry: Arc<FormatRegistry>) -> Self {
+    pub fn new(config: Arc<Config>) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .build()
             .expect("Failed to create HTTP client");
 
-        Self {
-            config,
-            client,
-            format_registry,
-        }
+        Self { config, client }
     }
 
     fn get_provider(
@@ -63,34 +58,31 @@ pub async fn chat_completions(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    // Detect and interpret the incoming request format
-    let interpreter = match state.format_registry.detect_interpreter(&headers, &body) {
-        Some(interp) => {
-            info!("Using interpreter: {}", interp.name());
-            interp
-        }
-        None => {
-            return error_response(StatusCode::BAD_REQUEST, "Could not detect request format");
-        }
-    };
-
-    // Parse into canonical format
-    let canonical_request: CanonicalChatRequest = match interpreter.interpret(&body) {
-        Ok(req) => req,
-        Err(e) => {
-            error!("Failed to interpret request: {}", e);
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                &format!("Invalid request body: {}", e),
-            );
-        }
-    };
-
-    // Get provider configuration
+    // Get provider configuration first
     let (provider_name, provider_config) = match state.get_provider(provider.as_deref()) {
         Some(p) => p,
         None => {
             return error_response(StatusCode::BAD_REQUEST, "No provider configured");
+        }
+    };
+
+    // Use configured input format
+    let input_format = match provider_config.input {
+        ConfigInputFormat::Anthropic => InputFormat::Anthropic,
+        ConfigInputFormat::Ollama => InputFormat::Ollama,
+        ConfigInputFormat::OpenAi => InputFormat::OpenAI,
+    };
+    info!("Using input format: {:?} for provider: {}", input_format, provider_name);
+
+    // Parse into canonical format
+    let canonical_request: CanonicalChatRequest = match parse_request(input_format, &body) {
+        Ok(req) => req,
+        Err(e) => {
+            error!("Failed to parse request: {}", e);
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("Invalid request body: {}", e),
+            );
         }
     };
 
@@ -180,27 +172,15 @@ pub async fn chat_completions(
             .unwrap();
     }
 
-    // Get formatter based on provider's configured output
-    let formatter_name = match provider_config.output {
-        OutputFormat::Anthropic => "anthropic",
-        OutputFormat::Ollama => "ollama",
-        OutputFormat::OpenAiCompatible => "openai",
+    // Determine output format from config
+    let output_format = match provider_config.output {
+        ConfigOutputFormat::Anthropic => OutputFormat::Anthropic,
+        ConfigOutputFormat::Ollama => OutputFormat::Ollama,
+        ConfigOutputFormat::OpenAiCompatible => OutputFormat::OpenAI,
     };
 
-    let formatter = match state.format_registry.get_formatter(formatter_name) {
-        Some(fmt) => fmt,
-        None => {
-            // Fallback to passthrough if formatter not found
-            return Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(response_body))
-                .unwrap();
-        }
-    };
-
-    // Parse OpenAI response to canonical format, then format to output
-    let canonical_response: crate::formats::CanonicalChatResponse =
+    // Parse upstream response (always OpenAI format)
+    let canonical_response: crate::protocols::CanonicalChatResponse =
         match serde_json::from_slice(&response_body) {
             Ok(resp) => resp,
             Err(e) => {
@@ -214,8 +194,8 @@ pub async fn chat_completions(
             }
         };
 
-    // Format the response
-    match formatter.format(&canonical_response) {
+    // Format the response to desired output format
+    match format_response(output_format, &canonical_response) {
         Ok(formatted) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json")

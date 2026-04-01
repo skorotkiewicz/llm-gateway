@@ -19,7 +19,18 @@ pub struct ServerConfig {
 pub struct ProviderConfig {
     pub base_url: String,
     pub api_key: String,
+    #[serde(default)]
+    pub input: InputFormat,
     pub output: OutputFormat,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InputFormat {
+    #[default]
+    OpenAi,
+    Anthropic,
+    Ollama,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -49,7 +60,7 @@ impl Config {
         let mut providers = HashMap::new();
 
         // Parse providers from env
-        // Format: PROVIDER_<NAME>_BASE_URL, PROVIDER_<NAME>_API_KEY, PROVIDER_<NAME>_OUTPUT
+        // Format: PROVIDER_<NAME>_BASE_URL, PROVIDER_<NAME>_API_KEY, PROVIDER_<NAME>_INPUT, PROVIDER_<NAME>_OUTPUT
         for (key, value) in std::env::vars() {
             if key.starts_with("PROVIDER_") && key.ends_with("_BASE_URL") {
                 let name = key
@@ -59,8 +70,16 @@ impl Config {
 
                 let base_url = value;
                 let api_key = std::env::var(format!("PROVIDER_{}_API_KEY", name.to_uppercase()))?;
+                let input = std::env::var(format!("PROVIDER_{}_INPUT", name.to_uppercase()))
+                    .unwrap_or_else(|_| "openai".to_string());
                 let output = std::env::var(format!("PROVIDER_{}_OUTPUT", name.to_uppercase()))
                     .unwrap_or_else(|_| "openai-compatible".to_string());
+
+                let input_format = match input.as_str() {
+                    "anthropic" => InputFormat::Anthropic,
+                    "ollama" => InputFormat::Ollama,
+                    _ => InputFormat::OpenAi,
+                };
 
                 let output_format = match output.as_str() {
                     "anthropic" => OutputFormat::Anthropic,
@@ -73,6 +92,7 @@ impl Config {
                     ProviderConfig {
                         base_url,
                         api_key,
+                        input: input_format,
                         output: output_format,
                     },
                 );

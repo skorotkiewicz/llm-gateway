@@ -20,7 +20,7 @@ pub async fn auth_middleware(
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok());
 
-    let valid = auth_header.map_or(false, |auth| {
+    let valid = auth_header.is_some_and(|auth| {
         // Support "Bearer <token>" or just "<token>" format
         let token = auth.strip_prefix("Bearer ").unwrap_or(auth).trim();
         token == config.server.api_key

@@ -1,5 +1,5 @@
 mod config;
-mod formats;
+mod protocols;
 mod middleware;
 mod proxy;
 
@@ -20,7 +20,6 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use config::Config;
-use formats::FormatRegistry;
 use proxy::{chat_completions, health_check, list_models, ProxyState};
 
 #[tokio::main]
@@ -45,18 +44,8 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(config);
     info!("Loaded {} providers", config.providers.len());
 
-    // Initialize format registry
-    let format_registry = Arc::new(FormatRegistry::new());
-    info!(
-        "Registered {} interpreters and {} formatters",
-        format_registry.interpreter_count(),
-        format_registry.formatter_count()
-    );
-    info!("Interpreters: {:?}", format_registry.interpreter_names());
-    info!("Formatters: {:?}", format_registry.formatter_names());
-
     // Create proxy state
-    let proxy_state = Arc::new(ProxyState::new(config.clone(), format_registry));
+    let proxy_state = Arc::new(ProxyState::new(config.clone()));
 
     // Configure CORS
     let cors = CorsLayer::new()
@@ -104,8 +93,7 @@ async fn main() -> anyhow::Result<()> {
     info!("");
     info!("Request formats supported: openai, anthropic, ollama");
     info!("Output formats supported: openai-compatible, anthropic, ollama");
-    info!("");
-    info!("To add a new format, implement RequestInterpreter and ResponseFormatter traits!");
+    info!("To add a new format, just implement conversion functions in formats.rs!");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
