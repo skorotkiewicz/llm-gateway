@@ -19,6 +19,14 @@ check:
     cargo fmt --check
     cargo clippy --all-targets --all-features -- -D warnings
 
+test-api: build
+    #!/usr/bin/env bash
+    ./target/release/llm-gateway &
+    pid=$!
+    sleep 2
+    ./cron.sh
+    kill -9 $pid
+
 install-hook:
     #!/usr/bin/env bash
     cat > .git/hooks/pre-commit << 'EOF'
