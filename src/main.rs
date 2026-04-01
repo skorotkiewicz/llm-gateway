@@ -1,6 +1,6 @@
 mod config;
+mod formats;
 mod middleware;
-mod models;
 mod proxy;
 
 use std::net::SocketAddr;
@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use axum::{
     middleware::from_fn_with_state,
-    routing::{any, get, post},
+    routing::{get, post},
     Router,
 };
 use tower::ServiceBuilder;
@@ -16,11 +16,12 @@ use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
-use tracing::{info};
+use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use config::Config;
-use proxy::{ProxyState, chat_completions, health_check, list_models, proxy_request};
+use formats::FormatRegistry;
+use proxy::{chat_completions, health_check, list_models, ProxyState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -44,8 +45,18 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(config);
     info!("Loaded {} providers", config.providers.len());
 
+    // Initialize format registry
+    let format_registry = Arc::new(FormatRegistry::new());
+    info!(
+        "Registered {} interpreters and {} formatters",
+        format_registry.interpreter_count(),
+        format_registry.formatter_count()
+    );
+    info!("Interpreters: {:?}", format_registry.interpreter_names());
+    info!("Formatters: {:?}", format_registry.formatter_names());
+
     // Create proxy state
-    let proxy_state = Arc::new(ProxyState::new(config.clone()));
+    let proxy_state = Arc::new(ProxyState::new(config.clone(), format_registry));
 
     // Configure CORS
     let cors = CorsLayer::new()
@@ -63,12 +74,9 @@ async fn main() -> anyhow::Result<()> {
         // Provider-specific endpoints
         .route("/v1/:provider/chat/completions", post(chat_completions))
         .route("/v1/:provider/models", get(list_models))
-        .route("/v1/:provider/*path", any(proxy_request))
         // Anthropic-compatible endpoints
         .route("/v1/messages", post(chat_completions))
         .route("/v1/:provider/messages", post(chat_completions))
-        // Generic proxy for any other paths
-        .route("/*path", any(proxy_request))
         .layer(
             ServiceBuilder::new()
                 .layer(TraceLayer::new_for_http())
@@ -88,10 +96,16 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Starting server on {}", addr);
     info!("Available endpoints:");
-    info!("  POST /v1/chat/completions - Chat completions (OpenAI format)");
-    info!("  POST /v1/messages - Chat completions (Anthropic format)");
+    info!("  POST /v1/chat/completions - Chat completions (auto-detect format)");
+    info!("  POST /v1/messages - Chat completions (auto-detect format)");
+    info!("  POST /v1/{{provider}}/chat/completions - Provider-specific endpoint");
     info!("  GET  /v1/models - List available models");
     info!("  GET  /health - Health check");
+    info!("");
+    info!("Request formats supported: openai, anthropic, ollama");
+    info!("Output formats supported: openai-compatible, anthropic, ollama");
+    info!("");
+    info!("To add a new format, implement RequestInterpreter and ResponseFormatter traits!");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;

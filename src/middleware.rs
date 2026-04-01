@@ -22,10 +22,7 @@ pub async fn auth_middleware(
 
     let valid = auth_header.map_or(false, |auth| {
         // Support "Bearer <token>" or just "<token>" format
-        let token = auth
-            .strip_prefix("Bearer ")
-            .unwrap_or(auth)
-            .trim();
+        let token = auth.strip_prefix("Bearer ").unwrap_or(auth).trim();
         token == config.server.api_key
     });
 

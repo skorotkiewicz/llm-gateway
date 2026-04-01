@@ -27,6 +27,7 @@ pub struct ProviderConfig {
 pub enum OutputFormat {
     OpenAiCompatible,
     Anthropic,
+    Ollama,
 }
 
 impl Config {
@@ -63,6 +64,7 @@ impl Config {
 
                 let output_format = match output.as_str() {
                     "anthropic" => OutputFormat::Anthropic,
+                    "ollama" => OutputFormat::Ollama,
                     _ => OutputFormat::OpenAiCompatible,
                 };
 

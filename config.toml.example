@@ -22,3 +22,8 @@ output = "openai-compatible"
 base_url = "http://localhost:8080/v1"
 api_key = "local-api-key"
 output = "openai-compatible"
+
+[providers.ollama]
+base_url = "http://localhost:11434/api"
+api_key = "ollama-api-key"
+output = "openai-compatible"
