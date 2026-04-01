@@ -8,10 +8,11 @@ use futures::stream::StreamExt;
 use reqwest::Client;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::config::{Config, InputFormat as ConfigInputFormat, OutputFormat as ConfigOutputFormat};
 use crate::protocols::{format_response, parse_request, CanonicalChatRequest, InputFormat, OutputFormat};
+use crate::protocols::openai::{OpenAIRequest, OpenAIMessage, OpenAIResponse};
 
 #[derive(Clone)]
 pub struct ProxyState {
@@ -54,17 +55,39 @@ impl ProxyState {
 
 pub async fn chat_completions(
     State(state): State<Arc<ProxyState>>,
-    Path(provider): Path<Option<String>>,
+    Path(provider): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    // Get provider configuration first
+    info!("chat_completions called with provider: {}", provider);
+    chat_completions_internal(state, Some(provider), headers, body).await
+}
+
+pub async fn chat_completions_default(
+    State(state): State<Arc<ProxyState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    info!("chat_completions called without provider (using default)");
+    chat_completions_internal(state, None, headers, body).await
+}
+
+async fn chat_completions_internal(
+    state: Arc<ProxyState>,
+    provider: Option<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    // Get provider configuration
     let (provider_name, provider_config) = match state.get_provider(provider.as_deref()) {
         Some(p) => p,
         None => {
+            error!("No provider configured");
             return error_response(StatusCode::BAD_REQUEST, "No provider configured");
         }
     };
+
+    info!("Using provider: {}", provider_name);
 
     // Use configured input format
     let input_format = match provider_config.input {
@@ -89,6 +112,35 @@ pub async fn chat_completions(
     // Check if streaming is requested
     let is_streaming = canonical_request.stream.unwrap_or(false);
 
+    // Convert canonical to OpenAI format for upstream
+    let openai_request = OpenAIRequest {
+        model: canonical_request.model.clone(),
+        messages: canonical_request.messages.iter().map(|m| OpenAIMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
+            name: m.name.clone(),
+        }).collect(),
+        temperature: canonical_request.temperature,
+        max_tokens: canonical_request.max_tokens,
+        stream: canonical_request.stream,
+        top_p: canonical_request.top_p,
+        frequency_penalty: canonical_request.frequency_penalty,
+        presence_penalty: canonical_request.presence_penalty,
+        stop: canonical_request.stop.clone(),
+    };
+
+    // Test serialization immediately
+    match serde_json::to_string(&openai_request) {
+        Ok(json) => debug!("OpenAI request serializes successfully: {}", json),
+        Err(e) => {
+            error!("Failed to serialize OpenAI request: {}", e);
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("Serialization error: {}", e),
+            );
+        }
+    };
+
     // Forward request to upstream provider (always as OpenAI format)
     let upstream_url = format!(
         "{}/chat/completions",
@@ -100,6 +152,10 @@ pub async fn chat_completions(
         provider_name, upstream_url
     );
 
+    // Debug: log the JSON being sent
+    let json_body = serde_json::to_string(&openai_request).unwrap_or_default();
+    debug!("Request JSON: {}", json_body);
+
     let mut upstream_request = state
         .client
         .post(&upstream_url)
@@ -108,7 +164,7 @@ pub async fn chat_completions(
             format!("Bearer {}", provider_config.api_key),
         )
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .json(&canonical_request);
+        .json(&openai_request);
 
     // Copy relevant headers
     for (key, value) in headers.iter() {
@@ -180,11 +236,15 @@ pub async fn chat_completions(
     };
 
     // Parse upstream response (always OpenAI format)
-    let canonical_response: crate::protocols::CanonicalChatResponse =
+    let openai_response: OpenAIResponse =
         match serde_json::from_slice(&response_body) {
-            Ok(resp) => resp,
+            Ok(resp) => {
+                debug!("Successfully parsed upstream response");
+                resp
+            }
             Err(e) => {
-                error!("Failed to parse upstream response: {}", e);
+                error!("Failed to parse upstream response as OpenAI format: {}", e);
+                error!("Response body: {}", String::from_utf8_lossy(&response_body));
                 // Return original response if parsing fails
                 return Response::builder()
                     .status(StatusCode::OK)
@@ -193,6 +253,18 @@ pub async fn chat_completions(
                     .unwrap();
             }
         };
+    
+    // Convert to canonical for output formatting
+    debug!("Converting OpenAI response to canonical format");
+    let canonical_response: crate::protocols::CanonicalChatResponse = match std::panic::catch_unwind(|| {
+        openai_response.into()
+    }) {
+        Ok(resp) => resp,
+        Err(_) => {
+            error!("Panic during conversion from OpenAI to canonical");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "Conversion error");
+        }
+    };
 
     // Format the response to desired output format
     match format_response(output_format, &canonical_response) {
@@ -254,4 +326,12 @@ pub async fn list_models(State(state): State<Arc<ProxyState>>) -> impl IntoRespo
         "object": "list",
         "data": models
     }))
+}
+
+pub async fn fallback_handler() -> impl IntoResponse {
+    error!("Fallback handler called - request did not match any route");
+    error_response(
+        StatusCode::NOT_FOUND,
+        "Endpoint not found"
+    )
 }

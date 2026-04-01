@@ -11,7 +11,7 @@ pub struct Config {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-    #[serde(rename = "api-key")]
+    #[serde(rename = "api-key", default)]
     pub api_key: String,
 }
 
@@ -28,6 +28,7 @@ pub struct ProviderConfig {
 #[serde(rename_all = "kebab-case")]
 pub enum InputFormat {
     #[default]
+    #[serde(rename = "openai")]
     OpenAi,
     Anthropic,
     Ollama,
@@ -36,6 +37,7 @@ pub enum InputFormat {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum OutputFormat {
+    #[serde(rename = "openai-compatible")]
     OpenAiCompatible,
     Anthropic,
     Ollama,

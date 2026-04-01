@@ -20,16 +20,22 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use config::Config;
-use proxy::{chat_completions, health_check, list_models, ProxyState};
+use proxy::{chat_completions, chat_completions_default, fallback_handler, health_check, list_models, ProxyState};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing
+    // Initialize tracing with simplified logging
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            format!("{}=debug,tower_http=debug", env!("CARGO_PKG_NAME")).into()
+            "llm_proxy_api=info,tower_http=warn".into()
         }))
-        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(false)
+                .with_thread_ids(false)
+                .with_ansi(false)
+                .without_time()
+        )
         .init();
 
     // Load configuration
@@ -57,14 +63,14 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         // Health check (no auth required)
         .route("/health", get(health_check))
-        // OpenAI-compatible endpoints
-        .route("/v1/chat/completions", post(chat_completions))
+        // OpenAI-compatible endpoints (no provider)
+        .route("/v1/chat/completions", post(chat_completions_default))
         .route("/v1/models", get(list_models))
         // Provider-specific endpoints
         .route("/v1/:provider/chat/completions", post(chat_completions))
         .route("/v1/:provider/models", get(list_models))
-        // Anthropic-compatible endpoints
-        .route("/v1/messages", post(chat_completions))
+        // Anthropic-compatible endpoints (no provider)
+        .route("/v1/messages", post(chat_completions_default))
         .route("/v1/:provider/messages", post(chat_completions))
         .layer(
             ServiceBuilder::new()
@@ -75,7 +81,8 @@ async fn main() -> anyhow::Result<()> {
                     middleware::auth_middleware,
                 )),
         )
-        .with_state(proxy_state);
+        .with_state(proxy_state)
+        .fallback(fallback_handler);
 
     // Start server
     let addr = SocketAddr::from((

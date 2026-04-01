@@ -5,12 +5,19 @@ use serde::{Deserialize, Serialize};
 pub struct OpenAIRequest {
     pub model: String,
     pub messages: Vec<OpenAIMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub presence_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
 }
 
@@ -18,6 +25,7 @@ pub struct OpenAIRequest {
 pub struct OpenAIMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
@@ -28,6 +36,7 @@ pub struct OpenAIResponse {
     pub created: i64,
     pub model: String,
     pub choices: Vec<OpenAIChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<OpenAIUsage>,
 }
 
@@ -90,6 +99,35 @@ impl From<CanonicalChatResponse> for OpenAIResponse {
                 })
                 .collect(),
             usage: c.usage.map(|u| OpenAIUsage {
+                prompt_tokens: u.prompt_tokens,
+                completion_tokens: u.completion_tokens,
+                total_tokens: u.total_tokens,
+            }),
+        }
+    }
+}
+
+impl From<OpenAIResponse> for super::CanonicalChatResponse {
+    fn from(o: OpenAIResponse) -> Self {
+        super::CanonicalChatResponse {
+            id: o.id,
+            object: o.object,
+            created: o.created,
+            model: o.model,
+            choices: o
+                .choices
+                .into_iter()
+                .map(|ch| super::CanonicalChoice {
+                    index: ch.index,
+                    message: super::CanonicalMessage {
+                        role: ch.message.role,
+                        content: ch.message.content,
+                        name: ch.message.name,
+                    },
+                    finish_reason: ch.finish_reason,
+                })
+                .collect(),
+            usage: o.usage.map(|u| super::CanonicalUsage {
                 prompt_tokens: u.prompt_tokens,
                 completion_tokens: u.completion_tokens,
                 total_tokens: u.total_tokens,

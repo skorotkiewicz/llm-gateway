@@ -14,6 +14,11 @@ pub async fn auth_middleware(
     request: Request,
     next: Next,
 ) -> impl IntoResponse {
+    // Skip auth if no api-key configured
+    if config.server.api_key.is_empty() {
+        return next.run(request).await;
+    }
+
     // Check for authorization header
     let auth_header = request
         .headers()

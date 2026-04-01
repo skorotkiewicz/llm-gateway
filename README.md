@@ -18,10 +18,20 @@ host = "0.0.0.0"
 port = 8888
 api-key = "your-proxy-key"
 
-[providers.ollama]
+[providers.my_llama]
 base_url = "http://localhost:11434/api"
 api_key = "key"
 input = "ollama"
+output = "openai-compatible"
+
+[providers.work_gpu]
+base_url = "http://192.168.1.100:11434/api"
+input = "ollama"
+output = "openai-compatible"
+
+[providers.claude]
+base_url = "https://api.anthropic.com/v1"
+input = "anthropic"
 output = "openai-compatible"
 ```
 
@@ -31,7 +41,13 @@ output = "openai-compatible"
 ## Example
 
 ```bash
+# Uses first configured provider
 curl http://localhost:8888/v1/chat/completions \
+  -H "Authorization: Bearer your-proxy-key" \
+  -d '{"model": "llama2", "prompt": "Hello!"}'
+
+# Route to specific provider by name
+curl http://localhost:8888/v1/work_gpu/chat/completions \
   -H "Authorization: Bearer your-proxy-key" \
   -d '{"model": "llama2", "prompt": "Hello!"}'
 ```
