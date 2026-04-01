@@ -28,7 +28,7 @@ jobs:
             cross: true
           # macOS AMD64 (Intel)
           - target: x86_64-apple-darwin
-            os: macos-12
+            os: macos-latest
             archive: tar.gz
           # macOS ARM64 (M1/M2/M3)
           - target: aarch64-apple-darwin
@@ -50,14 +50,11 @@ jobs:
       - name: Install cross-compilation tools (Linux ARM64)
         if: matrix.cross
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build release binary
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cargo install cross --git https://github.com/cross-rs/cross
             cross build --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
